@@ -20,7 +20,7 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(Party)
 class PartyAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'email', 'phone', 'user')
+    list_display = ('id', 'name', 'email', 'phone', 'user','associated_user')
     search_fields = ('name', 'email', 'phone', 'user__username')
     list_filter = ('name', 'user')
 

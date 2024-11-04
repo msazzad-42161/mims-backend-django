@@ -17,11 +17,36 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = ['id', 'medicine_name', 'ml', 'price', 'unit_price', 'company', 'min_sale']
         list_serializer_class = BulkProductSerializer
 
+from rest_framework import serializers
+from .models import Party
+from django.contrib.auth.models import User
+
 class PartySerializer(serializers.ModelSerializer):
+    associated_user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True
+    )
+
     class Meta:
         model = Party
-        fields = '__all__'
+        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user']
 
+    def validate(self, data):
+        user = self.context['request'].user
+
+        # If the user is a staff member and associated_user is provided, override it with their admin
+        if user.userprofile.user_type == 'staff':
+            admin_user = user.userprofile.admin
+            if not admin_user:
+                raise serializers.ValidationError("Staff user does not have an associated admin.")
+            data['associated_user'] = admin_user
+        else:
+            # If the user is an admin and associated_user is not provided, it's a regular party
+            # If associated_user is provided, it will be a user-associated party
+            data['associated_user'] = data.get('associated_user')
+
+        return data
 class TransactionItemSerializer(serializers.ModelSerializer):
     stock = serializers.PrimaryKeyRelatedField(queryset=Stock.objects.all())
     

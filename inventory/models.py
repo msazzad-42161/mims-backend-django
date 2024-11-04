@@ -12,15 +12,28 @@ class Product(models.Model):
     def __str__(self):
         return self.medicine_name
 
-class Party(models.Model):  # Changed from Customer to Party
-    user = models.ForeignKey(User, on_delete=models.CASCADE)  # Link to the User model
+
+class Party(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='owned_parties'
+    )  # The user (Admin or Staff) who manages this party
     name = models.CharField(max_length=255)
     email = models.EmailField()
     phone = models.CharField(max_length=15)
     address = models.TextField()
+    associated_user = models.OneToOneField(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='as_party'
+    )  # The authenticated user who is also a party, if applicable
 
     def __str__(self):
         return self.name
+
 
 class BaseTransaction(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)

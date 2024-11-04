@@ -34,7 +34,8 @@ class ProductListCreate(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save()  # Simply create the product without creating stock
 
-# Customer View: Handles customer listing and creation
+# Party View: Handles customer listing and creation
+
 class PartyListCreate(generics.ListCreateAPIView):
     serializer_class = PartySerializer
     permission_classes = [IsAuthenticated]
@@ -50,10 +51,9 @@ class PartyListCreate(generics.ListCreateAPIView):
             return Party.objects.none()
 
     def perform_create(self, serializer):
-        # Get the appropriate user (admin's ID for staff)
         user = self.request.user
         if user.userprofile.user_type == 'staff':
-            user = user.userprofile.admin
+            user = user.userprofile.admin  # Use the admin user for staff
         serializer.save(user=user)
 
 # Transaction View: Handles transaction listing and creation
