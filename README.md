@@ -12,6 +12,9 @@ A Django REST API for managing pharmacy inventory, sales, and customer data.
 - Bulk Product Import via CSV
 - Payment Tracking
 - Draft Transaction Management
+- User Profile Management with Statistics
+- Session Management
+- Password Reset Functionality
 
 ## Models
 
@@ -65,6 +68,15 @@ A Django REST API for managing pharmacy inventory, sales, and customer data.
 - `POST /api/token/` - Obtain JWT token pair
 - `POST /api/token/refresh/` - Refresh JWT token
 - `POST /api/register/` - Register new user (admin/staff)
+- `POST /api/me/logout/` - Logout user
+- `POST /api/me/change-password/` - Change password
+
+### User Profile
+- `GET /api/me/` - Get current user profile with statistics
+- `PUT /api/me/` - Update user profile
+- `GET /api/me/staff/` - Get admin's staff list (admin only)
+- `GET /api/me/transactions/` - List user's transactions
+- `GET /api/me/parties/` - List user's parties
 
 ### Products
 - `GET /api/products/` - List all products
@@ -75,6 +87,7 @@ A Django REST API for managing pharmacy inventory, sales, and customer data.
 ### Parties
 - `GET /api/parties/` - List all parties (filtered by user)
 - `POST /api/parties/` - Create new party
+- `GET /api/me/parties/` - List user's parties
 
 ### Stock
 - `GET /api/stock/` - List all stock (filtered by user)
@@ -84,7 +97,11 @@ A Django REST API for managing pharmacy inventory, sales, and customer data.
 ### Transactions
 - `GET /api/transactions/` - List all transactions (filtered by user)
 - `POST /api/transactions/` - Create new transaction
+- `GET /api/transactions/<id>/` - Get specific transaction
+- `PUT /api/transactions/<id>/` - Update transaction
+- `DELETE /api/transactions/<id>/` - Delete transaction
 - `POST /api/transactions/<id>/complete-payment/` - Update payment for transaction
+- `GET /api/me/transactions/` - List user's transactions
 
 ### Draft Transactions
 - `GET /api/draft-transactions/` - List all draft transactions (filtered by user)
@@ -160,6 +177,43 @@ POST /api/register/
     "password": "Staff123!",
     "user_type": "staff",
     "admin_id": 2  // admin2's ID
+}
+```
+
+### User Profile
+
+#### Get Profile
+GET /api/me/
+```json
+Response:
+{
+    "username": "admin1",
+    "email": "admin1@test.com",
+    "user_type": "admin",
+    "is_premium": true,
+    "statistics": {
+        "total_products": 15,
+        "total_parties": 5,
+        "total_transactions": 25,
+        "total_staff": 2
+    }
+}
+```
+
+#### Change Password
+POST /api/me/change-password/
+```json
+{
+    "old_password": "current-password",
+    "new_password": "new-password"
+}
+```
+
+#### Logout
+POST /api/me/logout/
+```json
+{
+    "refresh_token": "your-refresh-token"
 }
 ```
 
@@ -337,4 +391,55 @@ POST /api/transactions/
     "payment_status": "pending",
     "type": "sale"
 }
+```
+
+### Update Transaction
+PUT /api/transactions/1/
+```json
+{
+    "payment_in": 150.00,
+    "items": [
+        {
+            "stock": 1,
+            "quantity": 3
+        }
+    ]
+}
+```
+
+## Error Handling
+
+The API returns appropriate HTTP status codes:
+
+- 200: Success
+- 201: Created
+- 400: Bad Request
+- 401: Unauthorized
+- 403: Forbidden
+- 404: Not Found
+- 500: Server Error
+
+Error responses include a message explaining the error:
+```json
+{
+    "error": "Detailed error message"
+}
+```
+
+## Installation and Setup
+
+1. Clone the repository
+2. Create a virtual environment
+3. Install dependencies: `pip install -r requirements.txt`
+4. Run migrations: `python manage.py migrate`
+5. Create superuser: `python manage.py createsuperuser`
+6. Run server: `python manage.py runserver`
+
+## Environment Variables
+
+Create a `.env` file with:
+```
+SECRET_KEY=your_secret_key
+DEBUG=True
+DATABASE_URL=your_database_url
 ```
