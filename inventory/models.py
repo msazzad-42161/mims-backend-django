@@ -36,7 +36,13 @@ class Party(models.Model):
 
 
 class BaseTransaction(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)  # This is the admin/owner
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='%(class)s_created'  # This will create unique related_names for each child model
+    )
     party = models.ForeignKey('Party', on_delete=models.CASCADE)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_in = models.DecimalField(max_digits=10, decimal_places=2, default=0)

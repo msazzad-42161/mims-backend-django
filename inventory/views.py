@@ -9,11 +9,15 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from .models import Product, Party, Transaction,Stock, UserProfile, DraftTransaction,TransactionItem
 from django.db import transaction
-from .serializers import ProductSerializer, PartySerializer, TransactionSerializer, RegisterSerializer,StockSerializer, DraftTransactionSerializer
+from .serializers import ProductSerializer, PartySerializer, TransactionSerializer, RegisterSerializer,StockSerializer, DraftTransactionSerializer,UserProfileSerializer
 from .permissions import IsAdminOrStaffPermission
 from rest_framework.parsers import MultiPartParser, FormParser
 import csv
 import io
+from rest_framework.generics import RetrieveUpdateDestroyAPIView
+from django.db import transaction as db_transaction
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import logout
 
 User = get_user_model()
 
@@ -44,8 +48,10 @@ class PartyListCreate(generics.ListCreateAPIView):
         try:
             user = self.request.user
             if user.userprofile.user_type == 'admin':
+                if self.request.path.endswith('/me/parties/'):
+                    return Party.objects.filter(user=user)
                 return Party.objects.filter(user=user)
-            # For staff, get parties associated with their admin
+            # For staff users
             return Party.objects.filter(user=user.userprofile.admin)
         except UserProfile.DoesNotExist:
             return Party.objects.none()
@@ -65,7 +71,12 @@ class TransactionListCreate(generics.ListCreateAPIView):
         try:
             user = self.request.user
             if user.userprofile.user_type == 'admin':
+                if self.request.path.endswith('/me/transactions/'):
+                    return Transaction.objects.filter(user=user)
                 return Transaction.objects.filter(user=user)
+            # For staff users
+            if self.request.path.endswith('/me/transactions/'):
+                return Transaction.objects.filter(created_by=user)
             return Transaction.objects.filter(user=user.userprofile.admin)
         except UserProfile.DoesNotExist:
             return Transaction.objects.none()
@@ -367,3 +378,125 @@ class ExecuteDraftTransaction(APIView):
             return Response({"message": "Draft transaction executed successfully.", "transaction_id": transaction.id}, status=status.HTTP_201_CREATED)
         except DraftTransaction.DoesNotExist:
             return Response({"error": "Draft transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class TransactionDetailView(RetrieveUpdateDestroyAPIView):
+    serializer_class = TransactionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.userprofile.user_type == 'admin':
+            return Transaction.objects.filter(user=user)
+        return Transaction.objects.filter(user=user.userprofile.admin)
+
+    def perform_update(self, serializer):
+        with db_transaction.atomic():
+            old_transaction = self.get_object()
+            
+            for item in old_transaction.items.all():
+                if old_transaction.type == 'sale':
+                    item.stock.quantity += item.quantity
+                else:  # purchase
+                    item.stock.quantity -= item.quantity
+                item.stock.save()
+            
+            transaction = serializer.save()
+            transaction.update_stock()
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs['partial'] = True
+        return super().get_serializer(*args, **kwargs)
+
+    def perform_destroy(self, instance):
+        with db_transaction.atomic():
+            # Reverse the stock changes before deleting
+            for item in instance.items.all():
+                if instance.type == 'sale':
+                    item.stock.quantity += item.quantity
+                else:  # purchase
+                    item.stock.quantity -= item.quantity
+                item.stock.save()
+            
+            instance.delete()
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user.userprofile
+
+    def get_queryset(self):
+        return UserProfile.objects.filter(user=self.request.user)
+
+    def get(self, request, *args, **kwargs):
+        profile = self.get_object()
+        serializer = self.get_serializer(profile)
+        data = serializer.data
+        
+        if profile.user_type == 'admin':
+            data['statistics'] = {
+                'total_products': Product.objects.count(),
+                'total_parties': Party.objects.filter(user=request.user).count(),
+                'total_transactions': Transaction.objects.filter(user=request.user).count(),
+                'total_staff': UserProfile.objects.filter(admin=request.user).count()
+            }
+            # Add staff list if requested
+            if request.path.endswith('/me/staff/'):
+                staff_serializer = UserProfileSerializer(
+                    UserProfile.objects.filter(admin=request.user),
+                    many=True
+                )
+                data['staff'] = staff_serializer.data
+        else:  # staff
+            data['statistics'] = {
+                'transactions_created': Transaction.objects.filter(
+                    user=profile.admin,
+                    created_by=request.user
+                ).count()
+            }
+        
+        return Response(data)
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh_token"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            logout(request)
+            return Response({"message": "Successfully logged out."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            user = request.user
+            old_password = request.data.get('old_password')
+            new_password = request.data.get('new_password')
+
+            # Verify old password
+            if not user.check_password(old_password):
+                return Response(
+                    {"error": "Old password is incorrect"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Set new password
+            user.set_password(new_password)
+            user.save()
+
+            # Logout user from all sessions
+            RefreshToken.for_user(user)
+
+            return Response(
+                {"message": "Password successfully changed. Please login again with your new password."}, 
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

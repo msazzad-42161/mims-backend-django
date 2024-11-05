@@ -1,7 +1,7 @@
 # inventory/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Product, Party, Transaction,Stock, TransactionItem, DraftTransaction, DraftTransactionItem
+from .models import Product, Party, Transaction,Stock, TransactionItem, DraftTransaction, DraftTransactionItem,UserProfile
 from django.contrib.auth.password_validation import validate_password
 from decimal import Decimal
 from django.db import transaction
@@ -30,7 +30,8 @@ class PartySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Party
-        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user']
+        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user', 'user']
+        read_only_fields = ('user',)
 
     def validate(self, data):
         user = self.context['request'].user
@@ -59,8 +60,15 @@ class TransactionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Transaction
-        fields = ['id','party', 'type', 'payment_in', 'items', 'total_amount', 'due_amount', 'payment_status']
-        read_only_fields = ('payment_status', 'due_amount', 'total_amount', 'date_at')
+        fields = ['id', 'party', 'type', 'payment_in', 'items', 'total_amount', 'due_amount', 
+                 'payment_status', 'created_by', 'user', 'date_at']
+        read_only_fields = ('payment_status', 'due_amount', 'total_amount', 'date_at', 
+                          'created_by', 'user')
+        extra_kwargs = {
+            'party': {'required': False},
+            'type': {'required': False},
+            'payment_in': {'required': False}
+        }
 
     def validate(self, data):
         # Get the current user
@@ -90,12 +98,10 @@ class TransactionSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items')
         
         # Calculate total amount from items using product prices
-        total_amount = Decimal('0')
-        for item in items_data:
-            stock = item['stock']
-            quantity = item['quantity']
-            price = stock.product.price
-            total_amount += price * quantity
+        total_amount = sum(
+            item['stock'].product.price * item['quantity']
+            for item in items_data
+        )
 
         validated_data['total_amount'] = total_amount
         validated_data['due_amount'] = total_amount - validated_data.get('payment_in', 0)
@@ -104,28 +110,51 @@ class TransactionSerializer(serializers.ModelSerializer):
             # Create transaction
             transaction_instance = Transaction.objects.create(**validated_data)
             
-            # Create transaction items and update stock
+            # Create transaction items
             for item in items_data:
-                stock = item['stock']
-                quantity = item['quantity']
-                
-                # Create transaction item
                 TransactionItem.objects.create(
                     transaction=transaction_instance,
-                    stock=stock,
-                    quantity=quantity,
-                    price=stock.product.price,
-                    subtotal=stock.product.price * quantity
+                    stock=item['stock'],
+                    quantity=item['quantity'],
+                    price=item['stock'].product.price,
+                    subtotal=item['stock'].product.price * item['quantity']
                 )
-                
-                # Update stock quantity
-                if transaction_instance.type == 'sale':
-                    stock.quantity -= quantity
-                else:  # purchase
-                    stock.quantity += quantity
-                stock.save()
             
             return transaction_instance
+
+    def update(self, instance, validated_data):
+        # Only process items if they're in the payload
+        if 'items' in validated_data:
+            items_data = validated_data.pop('items')
+            
+            # Calculate new total amount
+            total_amount = sum(
+                item['stock'].product.price * item['quantity']
+                for item in items_data
+            )
+            
+            instance.total_amount = total_amount
+            instance.due_amount = total_amount - instance.payment_in
+            
+            # Delete existing items
+            instance.items.all().delete()
+            
+            # Create new items
+            for item in items_data:
+                TransactionItem.objects.create(
+                    transaction=instance,
+                    stock=item['stock'],
+                    quantity=item['quantity'],
+                    price=item['stock'].product.price,
+                    subtotal=item['stock'].product.price * item['quantity']
+                )
+        
+        # Update any other fields if they're in the payload
+        for field in validated_data:
+            setattr(instance, field, validated_data[field])
+        
+        instance.save()
+        return instance
 
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
@@ -168,8 +197,10 @@ class DraftTransactionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DraftTransaction
-        fields = ['id', 'party', 'items', 'total_amount', 'payment_in', 'due_amount', 'payment_status', 'type', 'created_at', 'updated_at']
-        read_only_fields = ('created_at', 'updated_at', 'total_amount', 'due_amount', 'payment_status')
+        fields = ['id', 'party', 'items', 'total_amount', 'payment_in', 'due_amount', 
+                 'payment_status', 'type', 'created_at', 'updated_at', 'created_by', 'user']
+        read_only_fields = ('created_at', 'updated_at', 'total_amount', 'due_amount', 
+                          'payment_status', 'created_by', 'user')
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -198,3 +229,15 @@ class DraftTransactionSerializer(serializers.ModelSerializer):
             )
         
         return draft_transaction
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username')
+    email = serializers.CharField(source='user.email')
+    admin_email = serializers.CharField(source='admin.email', read_only=True)
+    admin_username = serializers.CharField(source='admin.username', read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'username', 'email', 'user_type', 'is_premium', 
+                 'admin_email', 'admin_username']
+        read_only_fields = ['user_type', 'is_premium']
