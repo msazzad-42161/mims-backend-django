@@ -1,6 +1,6 @@
 # inventory/urls.py
 from django.urls import path
-from .views import ProductListCreate, PartyListCreate, TransactionListCreate, CompletePayment, StockListCreate, StockUpdateView, ProductBulkCreateView, ProductCSVUploadView, DraftTransactionListCreate, ExecuteDraftTransaction, TransactionDetailView, UserProfileView, LogoutView, ChangePasswordView
+from .views import ProductListCreate, PartyListCreate, TransactionListCreate, CompletePayment, StockListCreate, StockUpdateView, ProductBulkCreateView, ProductCSVUploadView, DraftTransactionListCreate, ExecuteDraftTransaction, TransactionDetailView, UserProfileView, LogoutView, ChangePasswordView, PartyDetailView
 
 urlpatterns = [
     path('products/', ProductListCreate.as_view(), name='product-list-create'),
@@ -20,4 +20,5 @@ urlpatterns = [
     path('me/transactions/', TransactionListCreate.as_view(), name='user-transactions'),
     path('me/parties/', PartyListCreate.as_view(), name='user-parties'),
     path('me/staff/', UserProfileView.as_view(), name='admin-staff'),
+    path('me/parties/<int:pk>/', PartyDetailView.as_view(), name='party-detail'),
 ]

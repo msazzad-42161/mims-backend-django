@@ -17,11 +17,21 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = ['id', 'medicine_name', 'ml', 'price', 'unit_price', 'company', 'min_sale']
         list_serializer_class = BulkProductSerializer
 
-from rest_framework import serializers
-from .models import Party
-from django.contrib.auth.models import User
+
 
 class PartySerializer(serializers.ModelSerializer):
+    balance = serializers.SerializerMethodField()
+
+    def get_balance(self, obj):
+        transactions = Transaction.objects.filter(party=obj)
+        balance = 0
+        for trans in transactions:
+            if trans.type == 'sale':
+                balance += (trans.total_amount - trans.payment_in)  # What they still need to pay
+            else:  # purchase
+                balance -= (trans.total_amount - trans.payment_in)  # What we still need to pay
+        return balance
+
     associated_user = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         required=False,
@@ -30,7 +40,7 @@ class PartySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Party
-        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user', 'user']
+        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user', 'user', 'balance']
         read_only_fields = ('user',)
 
     def validate(self, data):
@@ -48,6 +58,7 @@ class PartySerializer(serializers.ModelSerializer):
             data['associated_user'] = data.get('associated_user')
 
         return data
+
 class TransactionItemSerializer(serializers.ModelSerializer):
     stock = serializers.PrimaryKeyRelatedField(queryset=Stock.objects.all())
     
@@ -119,6 +130,9 @@ class TransactionSerializer(serializers.ModelSerializer):
                     price=item['stock'].product.price,
                     subtotal=item['stock'].product.price * item['quantity']
                 )
+            
+            # Call update_stock() after creating all items
+            transaction_instance.update_stock()
             
             return transaction_instance
 

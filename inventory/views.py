@@ -500,3 +500,17 @@ class ChangePasswordView(APIView):
             )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class PartyDetailView(generics.RetrieveAPIView):
+    serializer_class = PartySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        try:
+            user = self.request.user
+            if user.userprofile.user_type == 'admin':
+                return Party.objects.filter(user=user)
+            # For staff users
+            return Party.objects.filter(user=user.userprofile.admin)
+        except UserProfile.DoesNotExist:
+            return Party.objects.none()
