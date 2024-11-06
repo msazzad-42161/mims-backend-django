@@ -120,6 +120,9 @@ class TransactionSerializer(serializers.ModelSerializer):
                     subtotal=item['stock'].product.price * item['quantity']
                 )
             
+            # Call update_stock() after creating all items
+            transaction_instance.update_stock()
+            
             return transaction_instance
 
     def update(self, instance, validated_data):
