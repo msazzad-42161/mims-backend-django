@@ -20,17 +20,38 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class PartySerializer(serializers.ModelSerializer):
-    balance = serializers.SerializerMethodField()
+    financial_summary = serializers.SerializerMethodField()
 
-    def get_balance(self, obj):
+    def get_financial_summary(self, obj):
         transactions = Transaction.objects.filter(party=obj)
-        balance = 0
+        
+        summary = {
+            'total_sales': 0,
+            'total_sales_payments': 0,
+            'total_sales_due': 0,
+            'total_purchases': 0,
+            'total_purchase_payments': 0,
+            'total_purchase_due': 0,
+            'they_owe_us': 0,
+            'we_owe_them': 0,
+            'net_balance': 0
+        }
+
         for trans in transactions:
             if trans.type == 'sale':
-                balance += (trans.total_amount - trans.payment_in)  # What they still need to pay
+                summary['total_sales'] += trans.total_amount
+                summary['total_sales_payments'] += trans.payment_in
+                summary['total_sales_due'] += (trans.total_amount - trans.payment_in)
             else:  # purchase
-                balance -= (trans.total_amount - trans.payment_in)  # What we still need to pay
-        return balance
+                summary['total_purchases'] += trans.total_amount
+                summary['total_purchase_payments'] += trans.payment_in
+                summary['total_purchase_due'] += (trans.total_amount - trans.payment_in)
+
+        summary['they_owe_us'] = summary['total_sales_due']
+        summary['we_owe_them'] = summary['total_purchase_due']
+        summary['net_balance'] = (summary['they_owe_us'] - summary['we_owe_them'])
+
+        return summary
 
     associated_user = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
@@ -40,7 +61,7 @@ class PartySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Party
-        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user', 'user', 'balance']
+        fields = ['id', 'name', 'email', 'phone', 'address', 'associated_user', 'user', 'financial_summary']
         read_only_fields = ('user',)
 
     def validate(self, data):
@@ -71,14 +92,16 @@ class TransactionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Transaction
-        fields = ['id', 'party', 'type', 'payment_in', 'items', 'total_amount', 'due_amount', 
-                 'payment_status', 'created_by', 'user', 'date_at']
-        read_only_fields = ('payment_status', 'due_amount', 'total_amount', 'date_at', 
-                          'created_by', 'user')
+        fields = ['id', 'party', 'type', 'items', 'payment_in', 'total_amount', 
+                 'due_amount', 'payment_status', 'created_by', 'user', 'date_at']
+        read_only_fields = ('date_at', 'created_by', 'user')
         extra_kwargs = {
-            'party': {'required': False},
-            'type': {'required': False},
-            'payment_in': {'required': False}
+            'party': {'required': True},
+            'type': {'required': True},
+            'payment_in': {'required': True},
+            'total_amount': {'required': True},
+            'due_amount': {'required': True},
+            'payment_status': {'required': True}
         }
 
     def validate(self, data):

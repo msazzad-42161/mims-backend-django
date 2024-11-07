@@ -36,42 +36,39 @@ class Party(models.Model):
 
 
 class BaseTransaction(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)  # This is the admin/owner
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='%(class)s_created'  # This will create unique related_names for each child model
-    )
-    party = models.ForeignKey('Party', on_delete=models.CASCADE)
+    party = models.ForeignKey(Party, on_delete=models.CASCADE)
+    type = models.CharField(max_length=10, choices=[('sale', 'Sale'), ('purchase', 'Purchase')])
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_in = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    due_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    payment_status = models.CharField(max_length=50, choices=[
-        ('pending', 'Pending'),
-        ('partial', 'Partial'),
-        ('completed', 'Completed')
-    ], default='pending')
-    type = models.CharField(max_length=50, choices=[
-        ('sale', 'Sale'),
-        ('purchase', 'Purchase')
-    ], default='sale')
+    due_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(
+        max_length=10,
+        choices=[('pending', 'Pending'), ('partial', 'Partial'), ('completed', 'Completed')],
+        default='pending'
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='%(class)s_transactions')
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True,
+        related_name='%(class)s_created'
+    )
 
     class Meta:
-        abstract = True  # This class will not create a table in the database
+        abstract = True
 
 class Transaction(BaseTransaction):
     date_at = models.DateField(auto_now_add=True)
 
-    def save(self, *args, **kwargs):
-        self.due_amount = self.total_amount - self.payment_in
-        if self.due_amount <= 0:
-            self.payment_status = 'completed'
-        elif self.payment_in > 0:
-            self.payment_status = 'partial'
-        else:
-            self.payment_status = 'pending'
-        super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     self.due_amount = self.total_amount - self.payment_in
+    #     if self.due_amount <= 0:
+    #         self.payment_status = 'completed'
+    #     elif self.payment_in > 0:
+    #         self.payment_status = 'partial'
+    #     else:
+    #         self.payment_status = 'pending'
+    #     super().save(*args, **kwargs)
 
     def update_stock(self):
         for item in self.items.all():
